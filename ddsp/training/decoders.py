@@ -31,10 +31,11 @@ class RnnFcDecoder(nn.DictLayer):
                rnn_channels=512,
                rnn_type='gru',
                ch=512,
-               layers_per_stack=3,
+               num_layers=3,
                stateless=False,
                input_keys=('ld_scaled', 'f0_scaled', 'z'),
                output_splits=(('amps', 1), ('harmonic_distribution', 40)),
+               density=1,
                **kwargs):
     """Constructor.
 
@@ -73,9 +74,9 @@ class RnnFcDecoder(nn.DictLayer):
     rnn_cls = nn.StatelessRnn if stateless else nn.Rnn
 
     # Layers.
-    self.input_stacks = [stack() for _ in range(n_stacks)]
-    self.rnn = rnn_cls(rnn_channels, rnn_type)
-    self.out_stack = stack()
+    self.input_stacks = [nn.FcStack(ch, layers=num_layers, density=density) for k in self.input_keys]
+    self.rnn = nn.Rnn(dims=rnn_channels, rnn_type=rnn_type)
+    self.out_stack = nn.FcStack(ch, layers=num_layers, density=density)
 
     # Copied from OutputSplitsLayer to handle stateless logic.
     n_out = sum([v[1] for v in output_splits])
@@ -87,16 +88,27 @@ class RnnFcDecoder(nn.DictLayer):
     if self.stateless:
       state = inputs.pop()
 
+    for i, in_value in enumerate(inputs):
+      print(f"RnnFcDecoder: inputs[{i}] = {inputs[i].shape}")
+
     # Initial processing.
     inputs = [stack(x) for stack, x in zip(self.input_stacks, inputs)]
 
+    for i, in_value in enumerate(inputs):
+      print(f"RnnFcDecoder: FcStack(inputs[{i}]) = {inputs[i].shape}")
+
     # Run an RNN over the latents.
     x = tf.concat(inputs, axis=-1)
+    print(f"RnnFcDecoder: x type = {type(x)}")
+    print(f"RnnFcDecoder: shape after concat = {x.shape}")
+
     if self.stateless:
       x, new_state = self.rnn(x, state)
     else:
       x = self.rnn(x)
     x = tf.concat(inputs + [x], axis=-1)
+
+    print(f"RnnFcDecoder: shape after final concat = {x.shape}")
 
     # Final processing.
     x = self.out_stack(x)
@@ -225,7 +237,7 @@ class DilatedConvDecoder(nn.OutputSplitsLayer):
   def __init__(self,
                ch=256,
                kernel_size=3,
-               layers_per_stack=5,
+               num_layers=5,
                stacks=2,
                dilation=2,
                norm_type='layer',
@@ -257,7 +269,7 @@ class DilatedConvDecoder(nn.OutputSplitsLayer):
     self.dilated_conv_stack = nn.DilatedConvStack(
         ch=ch,
         kernel_size=kernel_size,
-        layers_per_stack=layers_per_stack,
+        num_layers=num_layers,
         stacks=stacks,
         dilation=dilation,
         norm_type=norm_type,

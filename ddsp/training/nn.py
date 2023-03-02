@@ -26,6 +26,7 @@ import tensorflow_probability as tfp
 tfk = tf.keras
 tfkl = tfk.layers
 
+from sparsenet.core import sparse
 
 # False positive lint error on tf.split().
 # pylint: disable=redundant-keyword-arg
@@ -150,6 +151,8 @@ class DictLayer(tfkl.Layer):
         returns a dictionary it will be returned directly, otherwise the output
         tensors will be wrapped in a dictionary {output_key: output_tensor}.
     """
+    print(f"debug: DictLayer: received inputs: {inputs}, kwargs: {kwargs}")
+
     # Construct a list of input tensors equal in length and order to the `call`
     # input signature.
     # -- Start first with any tensor arguments.
@@ -840,14 +843,36 @@ class ResNet(tfkl.Layer):
     return x
 
 
+class SqueezeLayer(tfkl.Layer):
+
+    def __init__(self, axis, **kwargs):
+        super().__init__(**kwargs)
+        self.axis = axis
+
+    def __call__(self, input):
+        return tf.squeeze(input, axis=self.axis)
+
+
+class ExpandDimsLayer(tfkl.Layer):
+
+    def __init__(self, axis, **kwargs):
+        super().__init__(**kwargs)
+        self.axis = axis
+
+    def __call__(self, input):
+        return tf.expand_dims(input, axis=self.axis)
+
+
 # ---------------- Stacks ------------------------------------------------------
 @gin.register
 class Fc(tf.keras.Sequential):
   """Makes a Dense -> LayerNorm -> Leaky ReLU layer."""
 
-  def __init__(self, ch=128, nonlinearity='leaky_relu', **kwargs):
+  def __init__(self, ch=128, nonlinearity='leaky_relu', density=1, **kwargs):
     layers = [
-        tfkl.Dense(ch),
+        #SqueezeLayer(axis=2),  <-- we don't need it because we handle it in FcStack
+        tfkl.Dense(ch) if density == 1 else sparse(units=ch, density=density, activation=None),
+        #ExpandDimsLayer(axis=2),
         tfkl.LayerNormalization(),
         tfkl.Activation(get_nonlinearity(nonlinearity)),
     ]
@@ -855,13 +880,29 @@ class Fc(tf.keras.Sequential):
 
 
 @gin.register
-class FcStack(tf.keras.Sequential):
+class FcStack(tfkl.Layer):
   """Stack Dense -> LayerNorm -> Leaky ReLU layers."""
 
-  def __init__(self, ch=256, layers=2, nonlinearity='leaky_relu', **kwargs):
-    layers = [Fc(ch, nonlinearity) for i in range(layers)]
-    super().__init__(layers, **kwargs)
+  def __init__(self, ch=256, layers=2, nonlinearity='leaky_relu', density=1, **kwargs):
+    super().__init__(**kwargs)
+    self.layers = [Fc(ch, nonlinearity=nonlinearity, density=density) for i in range(layers)]
 
+  def __call__(self, x):
+    initial_xshape_0 = x.shape[0]
+    initial_xshape_1 = x.shape[1]
+
+    x = tf.reshape(x, shape=(x.shape[0] * x.shape[1], x.shape[2]))
+
+    print(f"FcStack: reshaped x to {x.shape}.")
+
+    for layer in self.layers:
+        x = layer(x)
+
+    x = tf.reshape(x, shape=(initial_xshape_0, initial_xshape_1, x.shape[1]))
+
+    print(f"FcStack: reshaped x back to {x.shape}.")
+
+    return x
 
 @gin.register
 class Rnn(tfkl.Layer):
@@ -869,15 +910,14 @@ class Rnn(tfkl.Layer):
 
   def __init__(self, dims, rnn_type, return_sequences=True, bidir=False,
                **kwargs):
-    super().__init__(**kwargs)
-    rnn_class = {'lstm': tfkl.LSTM,
-                 'gru': tfkl.GRU}[rnn_type]
-    self.rnn = rnn_class(dims, return_sequences=return_sequences)
-    if bidir:
-      self.rnn = tfkl.Bidirectional(self.rnn)
+      super().__init__(**kwargs)
+      rnn_class = {'lstm': tfkl.LSTM, 'gru': tfkl.GRU}[rnn_type]
+      self.rnn = rnn_class(dims, return_sequences=return_sequences)
+      if bidir:
+          self.rnn = tfkl.Bidirectional(self.rnn)
 
   def call(self, x):
-    return self.rnn(x)
+      return self.rnn(x)
 
 
 @gin.register
@@ -1039,7 +1079,7 @@ class DilatedConvStack(tfkl.Layer):
 
   def __init__(self,
                ch=256,
-               layers_per_stack=5,
+               num_layers=5,
                stacks=2,
                kernel_size=3,
                dilation=2,
@@ -1057,7 +1097,7 @@ class DilatedConvStack(tfkl.Layer):
 
     Args:
       ch: Number of channels in each convolution layer.
-      layers_per_stack: Convolution layers in each 'stack'. Dilation increases
+      num_layers: Convolution layers in each 'stack'. Dilation increases
         exponentially with layer depth inside a stack.
       stacks: Number of convolutions stacks.
       kernel_size: Size of convolution kernel.
@@ -1114,7 +1154,7 @@ class DilatedConvStack(tfkl.Layer):
       else:
         # If dilation is negative, decrease dilation with depth instead of
         # increasing.
-        dilation_rate = int((-dilation) ** (layers_per_stack - i - 1))
+        dilation_rate = int((-dilation) ** (num_layers - i - 1))
       layer = tf.keras.Sequential(name='dilated_conv')
       layer.add(tfkl.Activation(tf.nn.relu))
       layer.add(conv(ch, kernel_size, 1, dilation_rate))
@@ -1144,7 +1184,7 @@ class DilatedConvStack(tfkl.Layer):
         self.resample_layers.append(resample_layer())
 
       # Convolve.
-      for j in range(layers_per_stack):
+      for j in range(num_layers):
         # Convolution.
         layer = dilated_conv(j)
         # Normalization / scale and shift.

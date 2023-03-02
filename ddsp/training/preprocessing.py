@@ -102,6 +102,25 @@ class F0LoudnessPreprocessor(nn.DictLayer):
 
 
 @gin.register
+class F0LoudnessPreprocessorAndF0Extractor(F0LoudnessPreprocessor):
+    def __init__(self,
+                 time_steps=1000,
+                 frame_rate=250,
+                 sample_rate=16000,
+                 recompute_loudness=True,
+                 **kwargs):
+        super().__init__(time_steps=time_steps,
+                         frame_rate=frame_rate,
+                         sample_rate=sample_rate,
+                         recompute_loudness=recompute_loudness,
+                         **kwargs)
+
+    def call(self, loudness_db, f0_hz, audio=None) -> ['f0_hz', 'loudness_db', 'f0_scaled', 'ld_scaled']:
+        compute_audio_features(audio, sample_rate=self.sample_rate)
+        super.__call__(loudness_db=loudness_db, f0_hz=f0_hz, audio=audio)
+
+
+@gin.register
 class F0PowerPreprocessor(F0LoudnessPreprocessor):
   """Dynamically compute additional power_db feature."""
 

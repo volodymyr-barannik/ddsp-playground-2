@@ -55,6 +55,13 @@ class DataProvider(object):
     """A method that returns a tf.data.Dataset."""
     raise NotImplementedError
 
+  def get_batch_from_cached_dataset(self, cached_dataset, batch_size, shuffle=True, repeats=-1, drop_remainder=True):
+    dataset = cached_dataset
+    dataset = dataset.repeat(repeats)
+    dataset = dataset.batch(batch_size, drop_remainder=drop_remainder)
+    dataset = dataset.prefetch(buffer_size=_AUTOTUNE)
+    return dataset
+
   def get_batch(self,
                 batch_size,
                 shuffle=True,
@@ -71,32 +78,11 @@ class DataProvider(object):
     Returns:
       A batched tf.data.Dataset.
     """
-    dataset = self.get_dataset(shuffle)
-    dataset = dataset.repeat(repeats)
-    dataset = dataset.batch(batch_size, drop_remainder=drop_remainder)
-    dataset = dataset.prefetch(buffer_size=_AUTOTUNE)
-    return dataset
-
-
-@gin.register
-class ExperimentalDataProvider(DataProvider):
-  """Use the new tf.data.experimental.save/load() interface."""
-
-  def __init__(self, data_dir, sample_rate, frame_rate):
-    """RecordProvider constructor."""
-    super().__init__(sample_rate, frame_rate)
-    self.data_dir = data_dir
-
-  def get_dataset(self, shuffle=True):
-    """Read dataset direct from disk.
-
-    Args:
-      shuffle: Unused.
-
-    Returns:
-      dataset: A tf.dataset that reads from new experimental format.
-    """
-    return tf.data.experimental.load(self.data_dir)
+    return self.get_batch_from_cached_dataset(self.get_dataset(shuffle),
+                                              batch_size=batch_size,
+                                              shuffle=shuffle,
+                                              repeats=repeats,
+                                              drop_remainder=drop_remainder)
 
 
 class TfdsProvider(DataProvider):

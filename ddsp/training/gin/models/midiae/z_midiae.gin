@@ -43,7 +43,7 @@ OneHotEncoder.skip_expand = False
 # Synthcoder
 ZMidiAutoencoder.synthcoder = @decoders.DilatedConvDecoder()
 DilatedConvDecoder.ch = 128
-DilatedConvDecoder.layers_per_stack = 9
+DilatedConvDecoder.num_layers = 9
 DilatedConvDecoder.norm_type = 'layer'
 DilatedConvDecoder.input_keys = ('ld_scaled', 'f0_scaled')
 DilatedConvDecoder.stacks = 2
@@ -92,7 +92,7 @@ zn/ExpressionEncoder.net = @z/nn.DilatedConvStack()
 
 # Same DilatedConvStack for Note encoder and Global Expression Encoder.
 z/DilatedConvStack.ch = 128
-z/DilatedConvStack.layers_per_stack = 5
+z/DilatedConvStack.num_layers = 5
 z/DilatedConvStack.stacks = 4
 z/DilatedConvStack.norm_type = 'layer'
 z/DilatedConvStack.conditional = False
@@ -115,7 +115,7 @@ MidiToHarmonicDecoder.output_splits = (('f0_midi', 1),
                                        ('magnitudes', 65))
 MidiToHarmonicDecoder.net = @dec/nn.DilatedConvStack()
 dec/DilatedConvStack.ch = 128
-dec/DilatedConvStack.layers_per_stack = 5
+dec/DilatedConvStack.num_layers = 5
 dec/DilatedConvStack.stacks = 4
 dec/DilatedConvStack.norm_type = 'layer'
 dec/DilatedConvStack.conditional = True
