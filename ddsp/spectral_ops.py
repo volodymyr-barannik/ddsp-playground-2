@@ -502,7 +502,7 @@ class PretrainedCREPE(tf.keras.Model):
 
   def predict_f0_and_confidence(self, audio, viterbi=False, padding='center'):
     audio = audio[None, :] if len(audio.shape) == 1 else audio
-    batch_size = audio.shape[0]
+    batch_size = tf.shape(audio)[0]
 
     audio = pad(audio, self.frame_size, self.hop_size, padding=padding)
 
