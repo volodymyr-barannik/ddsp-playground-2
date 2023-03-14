@@ -151,7 +151,7 @@ class DictLayer(tfkl.Layer):
         returns a dictionary it will be returned directly, otherwise the output
         tensors will be wrapped in a dictionary {output_key: output_tensor}.
     """
-    print(f"debug: DictLayer: received inputs: {inputs}, kwargs: {kwargs}")
+    print(f"debug: DictLayer({type(self)}): received inputs: {inputs}, kwargs: {kwargs}")
 
     # Construct a list of input tensors equal in length and order to the `call`
     # input signature.
@@ -206,12 +206,16 @@ class DictLayer(tfkl.Layer):
                       f'Input dictionaries: {input_dict}\n'
                       f'Input Tensors (Args, Dicts, and Defaults): {inputs}\n')
     outputs = super().__call__(*inputs, **kwargs)
+    print(f"debug: DictLayer({type(self)}).__call__: type(outputs) = {type(outputs)}")
 
     # Return dict if call() returns it.
     if isinstance(outputs, dict):
       return outputs
     # Otherwise make a dict from output_keys.
     else:
+      if not ((type(outputs) is list) or (type(outputs) is tuple)):
+        outputs = [outputs]
+
       outputs = core.make_iterable(outputs)
       if len(self.output_keys) != len(outputs):
         raise ValueError(f'Output keys ({self.output_keys}) must have the same'
